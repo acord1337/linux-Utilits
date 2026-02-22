@@ -2,7 +2,8 @@
 #include <string>
 #include <vector>
 #include <sys/types.h>
-#include <exception>
+#include <expected>
+#include <string_view>
 
 struct ProcessInfo
 {
@@ -10,13 +11,22 @@ struct ProcessInfo
     pid_t pid = 0;
 };
 
+enum class ProcessError 
+{
+    AccessDenied,
+    InvalidIdentifier,
+    SourceUnavailable,
+    ReadError,
+    NotFound,
+    NotFiltered
+};
 
 class IProcessReader
 {
 public:
-    virtual std::optional<std::string> readProcessComm(pid_t pid) const = 0;
-    virtual std::optional<std::string> readProcessCmdline(pid_t pid) const = 0;
-    virtual std::optional<std::vector<std::string>> readProcessMaps(pid_t pid) const = 0;
+    virtual std::expected<std::string, ProcessError> readProcessComm(pid_t pid) const = 0;
+    virtual std::expected<std::string, ProcessError> readProcessCmdline(pid_t pid) const = 0;
+    virtual std::expected<std::vector<std::string>, ProcessError> readProcessMaps(pid_t pid) const = 0;
 
     virtual ~IProcessReader() = default;
 };
@@ -24,41 +34,41 @@ public:
 class IProcessValidator
 {
 public:
- virtual std::optional<pid_t> parsePid(const std::string& name) const = 0;
- virtual bool isDigitPid(const std::string& name) const = 0;
- virtual bool isValidDirProcess(const std::string& name, pid_t pid) const = 0;
- virtual bool filterProcessCmdLine(const std::string& name) const = 0;
- virtual bool canReadCmdline(pid_t pid) const = 0;
- virtual std::optional<std::string> matchesProcessName(pid_t pid, const std::string& name) const = 0;
+    virtual std::expected<pid_t, ProcessError> parsePid(const std::string& name) const = 0;;
+    virtual bool isValidDirProcess(pid_t pid) const = 0;
+    virtual bool filterProcessCmdLine(const std::string& line) const = 0;
+    virtual bool canReadCmdline(pid_t pid) const = 0;
+    virtual std::expected<std::string, ProcessError> matchesProcessName(pid_t pid, const std::string& name) const = 0;
 
- virtual ~IProcessValidator() = default;
+    virtual ~IProcessValidator() = default;
 };
 
 class IProcessManager
 {
 public:
-    virtual std::optional<std::vector<pid_t>> enumerateProcessPid() const = 0;
+    virtual std::expected<std::vector<pid_t>, ProcessError> enumerateProcessPid() const = 0;
+    virtual std::expected<std::string, ProcessError> tolowerString(std::string& line) const = 0;
 
     virtual ~IProcessManager() = default;
 };
 
 
 class ProcessSource : public IProcessReader,
-                      public IProcessValidator,
-                      public IProcessManager
+                    public IProcessValidator,
+                    public IProcessManager
 {
 public:
-    std::optional<std::vector<pid_t>> enumerateProcessPid() const override;
-    std::optional<std::string> readProcessComm(pid_t pid) const override;
-    std::optional<std::string> readProcessCmdline(pid_t pid) const override;
-    std::optional<std::vector<std::string>> readProcessMaps(pid_t pid) const override;
-    std::optional<std::string> matchesProcessName(pid_t pid, const std::string& name) const override;
+    std::expected<std::vector<pid_t>, ProcessError> enumerateProcessPid() const override;
+    std::expected<std::string, ProcessError> tolowerString(std::string& line) const override;
+    std::expected<std::string, ProcessError> readProcessComm(pid_t pid) const override;
+    std::expected<std::string, ProcessError> readProcessCmdline(pid_t pid) const override;
+    std::expected<std::vector<std::string>, ProcessError> readProcessMaps(pid_t pid) const override;
+    std::expected<std::string, ProcessError> matchesProcessName(pid_t pid, const std::string& name) const override;
 private:
-    bool isValidDirProcess(const std::string& name, pid_t pid) const override;
-    bool isDigitPid(const std::string& name) const override;
+    bool isValidDirProcess(pid_t pid) const override;
     bool canReadCmdline(pid_t pid) const override;
-    bool filterProcessCmdLine(const std::string& name) const override;
-    std::optional<pid_t> parsePid(const std::string& name) const override;
+    bool filterProcessCmdLine(const std::string& line) const override;
+    std::expected<pid_t, ProcessError> parsePid(const std::string& name) const override;
 };
 
 
@@ -67,7 +77,7 @@ class ProcessFinder
 public:
     explicit ProcessFinder(ProcessSource& source);
 
-    std::optional<std::vector<ProcessInfo>>searhProcessInfoByName(const std::string& name) const;
+    std::expected<std::vector<ProcessInfo>, ProcessError>searhProcessInfoByFilter(std::string& name) const;
 private:
- ProcessSource& source;
+    ProcessSource& source;
 };

@@ -4,6 +4,7 @@
 int main()
 {
     std::cerr << "Запещенно \n";
+    std::cerr << "Hello \n";
     ProcessSource source;
     ProcessFinder find(source);
     std::string nameProcess;
@@ -12,7 +13,7 @@ int main()
         std::cout << "Enter name process: \n";
         std::cin >> nameProcess;
 
-        auto infoProc = find.searhProcessInfoByName(nameProcess);
+        auto infoProc = find.searhProcessInfoByFilter(nameProcess);
 
         if(!infoProc)
         {

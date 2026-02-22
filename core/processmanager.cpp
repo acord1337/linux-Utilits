@@ -3,262 +3,301 @@
 #include <ranges>
 #include <algorithm>
 #include <fstream>
+#include <charconv>
+#include <system_error>
 
 ProcessFinder::ProcessFinder(ProcessSource& source) : source(source) {}
 
-/*
-Перечесляет pid всех запущеных процессов, сканируя виртуальную фс /proc
-возвращает: при успехе ветор с pid , при не успехе std::nullopt
-*/
-std::optional<std::vector<pid_t>> ProcessSource::enumerateProcessPid() const
+/**
+ * @brief перечисляет все запущеные процессы в /proc
+ * 
+ * @return std::expected<std::vector<pid_t>, ProcessError> Вектор в pid процессов
+ * @retval ProcessError::SourceUnavailable если директория /proc отсутствует или недоступна
+ * @retval ProcessError::ReadError если возникла ошибка при чтении содержимого.
+ */
+std::expected<std::vector<pid_t>, ProcessError> ProcessSource::enumerateProcessPid() const
 {
     std::vector<pid_t> pids{};
-    try
+    std::filesystem::path path = std::filesystem::path{"/proc"};
+    std::error_code ec;
+
+    if(!std::filesystem::exists(path, ec) || !std::filesystem::is_directory(path, ec))
+        return std::unexpected{ProcessError::SourceUnavailable};
+
+    auto it = std::filesystem::directory_iterator(path, ec);
+
+    if(ec)
+        return std::unexpected{ProcessError::SourceUnavailable};
+
+    for(const auto& entry : it)
     {
-        std::filesystem::path path = std::filesystem::path("/proc");
+        if(!entry.exists() || !entry.is_directory())
+            continue;
 
-        if(!std::filesystem::exists(path) || !std::filesystem::is_directory(path))
-            return std::nullopt;
+        std::string name = entry.path().filename().string();
 
-        for(const auto& entry : std::filesystem::directory_iterator(path))
-        {
-            if(!entry.exists() || !entry.is_directory())
-                continue;
+        auto pid = parsePid(name);
 
-            std::string name = entry.path().filename().string();
+        if(!pid)
+            continue;
 
-            auto pid = parsePid(name);
+        if(!isValidDirProcess(*pid))
+            continue;
 
-            if(!pid)
-                continue;
-
-            if(!isValidDirProcess(name, *pid))
-                continue;
-
-            pids.push_back(*pid);
-        }
+        pids.push_back(*pid);
     }
-    catch(const std::exception&)
-    {
-        return std::nullopt;
-    }
+
+    if(ec)
+        return std::unexpected{ProcessError::ReadError};
+
     return pids;
 }
 
-/*
-Преобразует pid процесса из string в pid_t 
-Возвращает pid при успешном преобразовании, или std::nullopt при ошибке или если stoi выкинет исключение
-*/
-std::optional<pid_t>ProcessSource::parsePid(const std::string& name) const
-{
-    try
-    {
-        return static_cast<pid_t>(std::stoi(name));
-    }
-    catch(const std::exception&)
-    {
-        return std::nullopt;
-    }
-    return std::nullopt;
-}
-
-/*
-Проверяет является ли имя директории в /proc числом и доступность процесса через чтение cmdline
-Возвращает true, если имя валидно и процесс доступен для чтения
-*/
-bool ProcessSource::isValidDirProcess(const std::string& name, pid_t pid) const 
-{
-    if(name.empty() || pid <= 0 || name.size() > 10)
-        return false;
-
-    return isDigitPid(name) && canReadCmdline(pid);
-}
-
-/*
-Проверяет является ли pid числом 
-Возвращает true если pid является числом
-*/
-bool ProcessSource::isDigitPid(const std::string& name) const 
+/**
+ * @brief преобразует строку пид процесса в pid_t, отсеивая не целочисленые имена директории
+ * @param name Входная строка с именем процесса
+ * @return std::unexpected<pid_t, ProcessError> Pid процесса в случае успеха
+ * @retval ProcessError::InvalidIndentifier если имя директории пустое или директория содержит не только числа,
+ * pid выходит за границы диапозона
+ */
+std::expected<pid_t, ProcessError>ProcessSource::parsePid(const std::string& name) const
 {
     if(name.empty())
+            return std::unexpected{ProcessError::InvalidIdentifier};
+
+    pid_t resultPid;
+    auto [pointer, ec] = std::from_chars(name.data(), name.data() + name.size(), resultPid);
+
+    if(ec != std::errc{} || pointer != name.data() + name.size())
+        return std::unexpected{ProcessError::InvalidIdentifier};
+
+    return resultPid;
+}
+
+/**
+ * @brief проверяет является ли директория валидным процессом /proc
+ * 
+ * @param pid числовой интификатор процесса 
+ * @return true если pid положителен  и удалось прочитать 1 байт в cmdline
+ * @return false если pid не положительный, либо это служебный поток/недоступен
+ */
+bool ProcessSource::isValidDirProcess(pid_t pid) const 
+{
+    if(pid <= 0)
         return false;
 
-    return std::ranges::all_of(name, [](unsigned char c){ return std::isdigit(c); });
+    return canReadCmdline(pid);
 }
 
-/*
-Читает 1 байт /proc/pid/cmdline
-Используется для проверки жив-ли процесс и используется- ли он пользователем
-Возвращает true если чтение удалось, false при ошибке или неудачном чтении
-*/
+/**
+ * @brief читает 1 байт из cmdline
+ * 
+ * @param pid индефитикатор процесса, откуда нужно прочитать 1 байт cmdline
+ * @return true при успешном чтении 1 байта
+ * @return false если pid процесса не положительный,
+ * если недостаточно прав на открытие или при резком исчезновении процесса
+ * если не удалось процитать 1 байт в cmdline
+ */
 bool ProcessSource::canReadCmdline(pid_t pid) const
 {
-    try
-    {
-        if(pid <= 0)
-            return false;
+    if(pid <= 0)
+        return false;
 
-        std::filesystem::path cmdPath = std::filesystem::path("/proc") / std::to_string(pid) / "cmdline";
+    std::filesystem::path cmdPath = std::filesystem::path("/proc") / std::to_string(pid) / "cmdline";
 
-        if(!std::filesystem::exists(cmdPath) || !std::filesystem::is_regular_file(cmdPath))
-            return false;
+    if(!std::filesystem::exists(cmdPath) || !std::filesystem::is_regular_file(cmdPath))
+        return false;
 
-        std::ifstream file(cmdPath, std::ios::binary);
+    std::ifstream file(cmdPath, std::ios::binary);
 
-        if(!file.is_open())
-            return false;
+    if(!file.is_open())
+        return false;
 
-        char firstByteName;
+    char firstByteName;
 
-        if(!(file >> firstByteName))
-            return false;
+    if(!(file >> firstByteName))
+        return false;
 
-        return true;
-    }
-    catch(std::exception&) { return false; }
+    return true;
 }
 
-
-
-std::optional<std::vector<std::string>> ProcessSource::readProcessMaps(pid_t pid) const {
-    return std::nullopt;
-}
-
-/*
-Ищет pid и все похожие имена процесса по тому , что введут в параметры функции в name
-Возвращает вектор структур о процессе(имя и пид) , при ошибке или если ничего не нашло - nullopt
-*/
-std::optional<std::vector<ProcessInfo>>ProcessFinder::searhProcessInfoByName(const std::string& name) const 
+std::expected<std::vector<std::string>, ProcessError> ProcessSource::readProcessMaps(pid_t pid) const 
 {
-   if(name.empty())
-       return std::nullopt;
+}
 
-   std::vector<ProcessInfo> infoProcess{};
+/**
+ * @brief Ищет все совпавшие процессы по вводу.
+ * 
+ * @param name Входная буква/строка.
+ * @return std::expected<std::vector<ProcessInfo>, ProcessError> вектор структур с данными о процессе(имя, id).
+ * @retval ProcessError::InvalidIdentifier если передоваемая строка или буква пуста.
+ * @retval enumerateProcessPid().error если возникли какие либо проблемы при получении имен процессов в /proc
+ * @retval tolowerString.error() при ошибки конвертации строки в нижний регистер
+ */
+std::expected<std::vector<ProcessInfo>, ProcessError>ProcessFinder::searhProcessInfoByFilter(std::string& name) const 
+{
+    if(name.empty())
+        return std::unexpected{ProcessError::InvalidIdentifier};
 
-   auto pids = source.enumerateProcessPid();
+    auto tolowerName = source.tolowerString(name);
 
-   if (!pids)
-        return std::nullopt;
+    if(!tolowerName)
+        return std::unexpected{tolowerName.error()};
+
+    std::vector<ProcessInfo> infoProcess{};
+
+    auto pids = source.enumerateProcessPid();
+
+    if (!pids)
+        return std::unexpected{pids.error()};
 
     for(const auto& pid : *pids)
     {
-        auto nameProcess = source.matchesProcessName(pid, name);
+        auto nameProcess = source.matchesProcessName(pid, *tolowerName);
 
-        if(nameProcess)
+        if(nameProcess && !nameProcess->empty())
         {
             infoProcess.push_back({*nameProcess, pid});
         }
     }
-    if(infoProcess.empty())
-        return std::nullopt;
-        
+
     return infoProcess;
 }
 
-/*
-Фильтрует процессы, читая их в comm и cmdline 
-Возвращает имя из comm если найденны совпадения и std::nullopt при ошибке или ничего не найдено
-*/
-std::optional<std::string> ProcessSource::matchesProcessName(pid_t pid, const std::string& name) const
+/**
+ * @brief ищет все совпавшие процессы по фильтру в comm
+ * 
+ * @param pid индетификатор процесса
+ * @param name фильтр, по которому надо искать
+ * @return std::expected<std::string, ProcessError> строку при удачном нахождении процесса
+ * @retval ProcessError::InvalidIdentifier если пид не положительный
+ * @retval readProcessComm.error() || tolowerString.error() если возникла ошибка при чтении названия процесса или конвертации строки в нижний регистер
+ * @retval ProcessError::NotFound еслии небыло совпадений
+ */
+std::expected<std::string, ProcessError> ProcessSource::matchesProcessName(pid_t pid, const std::string& name) const
+{
+    if(pid <= 0 || name.empty())
+        return std::unexpected{ProcessError::InvalidIdentifier};
+
+    auto nameComm = readProcessComm(pid);
+    if(!nameComm)
+        return std::unexpected{nameComm.error()};
+
+    if(nameComm->empty())
+        return std::unexpected{ProcessError::NotFound};
+
+    auto tolowerName = tolowerString(*nameComm);
+
+    if(!tolowerName)
+        return std::unexpected{tolowerName.error()};
+
+    if(tolowerName->find(name) != std::string::npos)
+        return *nameComm;
+
+    return std::unexpected{ProcessError::NotFound};
+}
+
+/**
+ * @brief читает имя процесса в /proc/pid/comm
+ * 
+ * @param pid индетификатор процесса 
+ * @return std::expected<std::string, ProcessError> Имя процесса при удачном чтении
+ * @retval ProcessError::InvalidIdentifier если pid процесса не положительный
+ * @retval ProcessError::SourceUnavailable если недостаточно прав на открытие или при резком исчезновении процесса
+ * @retval ProcessError::NotFound если имя процесса небыло найдено
+ */
+std::expected<std::string, ProcessError> ProcessSource::readProcessComm(pid_t pid) const 
 {
     if(pid <= 0)
-        return std::nullopt;
+        return std::unexpected{ProcessError::InvalidIdentifier};
 
-    auto nameCmdLine = readProcessCmdline(pid);
-    auto nameComm = readProcessComm(pid);
+    std::filesystem::path commPath = std::filesystem::path("/proc") / std::to_string(pid) / "comm";
 
-    if(!nameCmdLine || !nameComm || !canReadCmdline(pid) || nameCmdLine->empty() || nameComm->empty())
-        return std::nullopt;
+    if(!std::filesystem::exists(commPath) || !std::filesystem::is_regular_file(commPath))
+        return std::unexpected{ProcessError::SourceUnavailable};
 
-    if (!filterProcessCmdLine(*nameCmdLine))
-        return std::nullopt;
+    std::ifstream file(commPath);
 
-    if(nameCmdLine->find(name) != std::string::npos && nameComm->find(name) != std::string::npos)
+    if(!file.is_open())
+        return std::unexpected{ProcessError::SourceUnavailable};
+
+    std::string nameProc;
+
+    if(std::getline(file, nameProc))
     {
-        return *nameComm;
+        if(!nameProc.empty())
+            return nameProc;
     }
-    return std::nullopt;
+
+    return std::unexpected{ProcessError::NotFound};
 }
 
-/*
-Читает имя процесса через /proc/pid/comm, убрезается до 16 символов
-Возвращает имя если чтение удалось и std::nullopt при неудачном чтении
-*/
-std::optional<std::string> ProcessSource::readProcessComm(pid_t pid) const 
+/**
+ * @brief читает имя процесса из cmdline
+ * 
+ * @param pid индетификатор процесса
+ * @return std::expected<std::string, ProcessError> строку с именем процесса при успеке
+ * @retval InvalidIdentifier если пид не положительный
+ * @retval SourceUnavailable если недостаточно прав на открытие или при резком исчезновении процесса
+ * @retval ProcessError::NotFound если имя процесса небыло найдено
+ */
+std::expected<std::string, ProcessError> ProcessSource::readProcessCmdline(pid_t pid) const
 {
-    try
+    if(pid <= 0)
+        return std::unexpected{ProcessError::InvalidIdentifier};
+
+    std::filesystem::path path = std::filesystem::path("/proc") / std::to_string(pid) / "cmdline";
+    if(!std::filesystem::exists(path) || !std::filesystem::is_regular_file(path))
+        return std::unexpected{ProcessError::SourceUnavailable};
+
+    std::ifstream file(path);
+
+    if(!file.is_open())
+        return std::unexpected{ProcessError::SourceUnavailable};
+
+    std::string fullName;
+    std::string bufferName;
+
+    while(std::getline(file, bufferName, '\0'))
     {
-        if(pid <= 0)
-            return std::nullopt;
-
-        std::filesystem::path commPath = std::filesystem::path("/proc") / std::to_string(pid) / "comm";
-
-        if(!std::filesystem::exists(commPath) || !std::filesystem::is_regular_file(commPath))
-            return std::nullopt;
-
-        std::ifstream file(commPath);
-
-        if(!file.is_open())
-            return std::nullopt;
-
-        std::string nameProc;
-
-        if(std::getline(file, nameProc))
-        {
-            if(!nameProc.empty())
-                return nameProc;
-        }
-        else
-        {
-            return std::nullopt;
-        }
+        fullName += bufferName + " ";
     }
-    catch(std::exception& e) { return std::nullopt;}
+    if(fullName.empty())
+        return std::unexpected{ProcessError::NotFound};
 
-    return std::nullopt;
+    return fullName;
 }
 
-/*
-Читаем имя процесса через /proc/pid/cmdline
-Возвращает имя если чтение удалось и std::nullopt при неудачном чтение
-*/
-std::optional<std::string> ProcessSource::readProcessCmdline(pid_t pid) const
+/**
+ * @brief фильтрует имена процесса в cmdline, отбрасывая служебные скрипты
+ * 
+ * @param line строка, которую будем фильтровать
+ * @return true при успешно фильтрации
+ * @return false если строка пустая или не прошла фильтер
+ */
+bool ProcessSource::filterProcessCmdLine(const std::string& line) const
 {
-    try
-    {
-        if(pid <= 0)
-            return std::nullopt;
-
-        std::filesystem::path path = std::filesystem::path("/proc") / std::to_string(pid) / "cmdline";
-
-        std::ifstream file(path);
-
-        if(!file.is_open())
-            return std::nullopt;
-
-        std::string fullName;
-        std::string bufferName;
-
-        while(std::getline(file, bufferName, '\0'))
-        {
-            fullName += bufferName + " ";
-        }
-        if(fullName.empty())
-            return std::nullopt;
-        return fullName;
-    }
-    catch(std::exception& e) { return std::nullopt; }
-}
-
-/*
-Фильтрует служебные скрипты в cmdline
-Возвращает false если процесс служебный и true если нет
-*/
-bool ProcessSource::filterProcessCmdLine(const std::string& name) const
-{
-    if(name.empty()) return false;
-    if(name.find("/bin/sh") != std::string::npos) return false;
-    if(name.find("python") != std::string::npos) return false;
-
+    if(line.empty()) return false;
+    if(line.find("/bin/sh") != std::string::npos) return false;
+    if(line.find("python") != std::string::npos) return false;
     return true;
+}
+
+/**
+ * @brief Переделывает всю строку в нижний регистер
+ * 
+ * @param line строка или символ, который нужно привеси в нижний регистер
+ * @return std::expected<std::string, ProcessError> Строку с нижним регистром при успехе
+ * @retval ProcessError::InvalidIdentifier при неположительном pid процесса
+ */
+std::expected<std::string, ProcessError> ProcessSource::tolowerString(std::string& line) const 
+{
+    if(line.empty())
+        return std::unexpected{ProcessError::InvalidIdentifier};
+    std::string resultTolowerLine;
+    resultTolowerLine.reserve(line.size());
+
+    std::ranges::transform(line, std::back_inserter(resultTolowerLine), [](unsigned char s){ return static_cast<char>(std::tolower(s)); });
+
+    return resultTolowerLine;
 }
