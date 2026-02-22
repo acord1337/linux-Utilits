@@ -7,8 +7,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(SOURCES 
-    main.cpp 
-    core/processmanager.cpp core/processmanager.h
+    core/Process/ProcessScanner.cpp core/Process/ProcessScanner.hpp
+    core/Process/ProcessReader.cpp core/Process/ProcessReader.hpp
+    core/Process/ProcessFinder.cpp core/Process/ProcessFinder.hpp
+    main.cpp
 )
 
 add_executable(${PROJECT_NAME} ${SOURCES})

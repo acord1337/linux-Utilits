@@ -1,12 +1,15 @@
 #include <iostream>
-#include "core/processmanager.h"
+#include "core/Process/ProcessFinder.hpp"
+#include "core/Process/ProcessReader.hpp"
+#include "core/Process/ProcessScanner.hpp"
 
 int main()
 {
     std::cerr << "Запещенно \n";
     std::cerr << "Hello \n";
-    ProcessSource source;
-    ProcessFinder find(source);
+    ProcessScanner scan;
+    ProcessReader read;
+    ProcessFinder find(read, scan);
     std::string nameProcess;
     while (true)
     {
