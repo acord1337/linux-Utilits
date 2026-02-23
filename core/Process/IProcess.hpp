@@ -11,7 +11,7 @@ enum class ProcessError
     SourceUnavailable,
     ReadError,
     NotFound,
-    NotFiltered
+    NotFiltered,
 };
 
 class IProcessReader

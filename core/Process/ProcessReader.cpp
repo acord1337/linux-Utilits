@@ -18,13 +18,17 @@ std::expected<std::string, ProcessError> ProcessReader::readProcessComm(pid_t pi
 
     std::filesystem::path commPath = std::filesystem::path("/proc") / std::to_string(pid) / "comm";
 
-    if(!std::filesystem::exists(commPath) || !std::filesystem::is_regular_file(commPath))
-        return std::unexpected{ProcessError::SourceUnavailable};
-
     std::ifstream file(commPath);
 
     if(!file.is_open())
-        return std::unexpected{ProcessError::SourceUnavailable};
+    {
+        switch (errno)
+        {
+            case ENOENT: return std::unexpected{ProcessError::NotFound};
+            case EACCES: return std::unexpected{ProcessError::AccessDenied};
+            default: return std::unexpected{ProcessError::SourceUnavailable};    
+        }
+    }
 
     std::string nameProc;
 
@@ -52,13 +56,18 @@ std::expected<std::string, ProcessError> ProcessReader::readProcessCmdline(pid_t
         return std::unexpected{ProcessError::InvalidIdentifier};
 
     std::filesystem::path path = std::filesystem::path("/proc") / std::to_string(pid) / "cmdline";
-    if(!std::filesystem::exists(path) || !std::filesystem::is_regular_file(path))
-        return std::unexpected{ProcessError::SourceUnavailable};
 
     std::ifstream file(path);
 
     if(!file.is_open())
-        return std::unexpected{ProcessError::SourceUnavailable};
+    {
+        switch (errno)
+        {
+            case ENOENT: return std::unexpected{ProcessError::NotFound};
+            case EACCES: return std::unexpected{ProcessError::AccessDenied};
+            default: return std::unexpected{ProcessError::SourceUnavailable};    
+        }
+    }
 
     std::string fullName;
     std::string bufferName;
@@ -105,7 +114,44 @@ std::expected<std::string, ProcessError> ProcessReader::readProcessCmdline(pid_t
     return true;
 }*/
 
+/**
+ * @brief парсит все модули процесса по его индетификатору
+ * 
+ * @param pid индетификатор процесса
+ * @return std::expected<std::vector<std::string>, ProcessError> вектор со всеми модулями в случае успеха
+ * @retval NotFound если фаил не найден или по каким либо причинам maps пустой
+ * @retval AccessDenied при не достатке прав
+ * @retval SourceUnavailable и InvalidIdentifier если пид не положительный и по другим причинам
+ */
 std::expected<std::vector<std::string>, ProcessError> ProcessReader::readProcessMaps(pid_t pid) const 
 {
+    if(pid <= 0)
+        return std::unexpected{ProcessError::InvalidIdentifier};
+
+    std::filesystem::path mapsPath = std::filesystem::path("/proc") / std::to_string(pid) / "maps";
+
+    std::ifstream file(mapsPath);
     
+    if(!file.is_open())
+    {
+    switch (errno)
+        {
+            case ENOENT: return std::unexpected{ProcessError::NotFound};
+            case EACCES: return std::unexpected{ProcessError::AccessDenied};
+            default: return std::unexpected{ProcessError::SourceUnavailable};    
+        }
+    }
+
+    std::string line;
+    std::vector<std::string> modules;
+    while (std::getline(file, line))
+    {
+        if(!line.empty())
+            modules.push_back(std::move(line));
+    }
+
+    if(modules.empty())
+        return std::unexpected{ProcessError::NotFound};
+
+    return modules;
 }

@@ -10,6 +10,7 @@ set(SOURCES
     core/Process/ProcessScanner.cpp core/Process/ProcessScanner.hpp
     core/Process/ProcessReader.cpp core/Process/ProcessReader.hpp
     core/Process/ProcessFinder.cpp core/Process/ProcessFinder.hpp
+    core/Process/ModuleMapParser.cpp core/Process/ModuleMapParser.hpp
     main.cpp
 )
 
