@@ -3,53 +3,94 @@
 #include "core/Process/ProcessReader.hpp"
 #include "core/Process/ProcessScanner.hpp"
 #include "core/Process/ModuleMapParser.hpp"
+#include "core/Process/ModuleFilter.hpp"
 
 int main()
 {
-    std::cerr << "Запещенно \n";
-    std::cerr << "Hello \n";
-    ProcessScanner scan;
-    ProcessReader read;
-    ProcessFinder find(read, scan);
-    ModuleMapParser moduleParser(read);
-    pid_t pid = 0;
+    std::cerr << "Debug\n";
 
+    ProcessScanner scanner;
+    ProcessReader reader;
+    ProcessFinder finder(reader, scanner);
+    ModuleMapParser moduleParser(reader);
+    ModuleFilter filter;
+
+    ModuleFilterConfig config;
+
+    pid_t pid = 0;
     std::string nameProcess;
+
+    config.onlyWritable = true;
+    config.onlyExecutable = false;
+    config.excludeSystemLibs = true;
+    config.includeAnonymous = true;
+    config.includeDrivers = false;
+    config.includeTemporaryFile = false;
+
+    std::cout << "[Info] Filter settings:\n";
+    std::cout << "  onlyWritable: " << config.onlyWritable << "\n";
+    std::cout << "  onlyExecutable: " << config.onlyExecutable << "\n";
+    std::cout << "  excludeSystemLibs: " << config.excludeSystemLibs << "\n";
+    std::cout << "  includeAnonymous: " << config.includeAnonymous << "\n";
+
     while (true)
     {
-        std::cout << "Enter name process, 1 for ready: \n";
+        std::cout << "\nEnter process name (or '1' to enter PID directly, 'q' to quit): ";
         std::cin >> nameProcess;
-        
-        if(nameProcess == "1")
+        if (nameProcess == "q") break;
+
+        std::vector<MemoryRegion> modules;
+
+        if (nameProcess == "1")
         {
+            std::cout << "Enter PID: ";
             std::cin >> pid;
+
             auto sModules = moduleParser.parse(pid);
-
-            if(!sModules)
+            if (!sModules)
             {
-                std::cerr << "Error parsing moduleMap process \n";
+                std::cerr << "[Error] Failed to parse module map for PID " << pid << "\n";
+                continue;
             }
 
-            for(const auto& module : *sModules)
+            auto filtered = filter.filter(*sModules, config);
+            if (!filtered)
             {
-                std::cout << "Start addr: " << module.start << "EndAddr: " << module.end << std::endl<< std::endl;
-                std::cout << "Offsets: " << module.offset << "Permissions: " << module.permissions << std::endl<< std::endl;
-                std::cout << "Path: " << module.pathname << std::endl<< std::endl;
+                std::cerr << "[Error] Filtering failed: " << static_cast<int>(filtered.error()) << "\n";
+                continue;
             }
+
+            modules = *filtered;
         }
-
-        auto infoProc = find.searhProcessInfoByFilter(nameProcess);
-
-        if(!infoProc)
+        else
         {
-            std::cerr << "Not found or error \n";
+            auto infoProc = finder.searhProcessInfoByFilter(nameProcess);
+            if (!infoProc)
+            {
+                std::cerr << "[Error] No processes found matching: " << nameProcess << "\n";
+                continue;
+            }
+
+            std::cout << "[Info] Found processes:\n";
+            for (const auto& entry : *infoProc)
+            {
+                std::cout << "  Name: " << entry.name << " | PID: " << entry.pid << "\n";
+            }
             continue;
         }
 
-        for(const auto& entry : *infoProc)
+        // Вывод отфильтрованных модулей
+        std::cout << "\n[Modules]\n";
+        for (const auto& module : modules)
         {
-            std::cout << "Найденые совпадения:   " << "Name:   " << entry.name << std::endl<< "Pid:   " << entry.pid << std::endl<< std::endl;
+            std::cout << "Start: 0x" << std::hex << module.start
+                    << " End: 0x" << module.end << std::dec << "\n";
+            std::cout << "Offset: " << module.offset
+                    << " Perms: " << module.permissions << "\n";
+            std::cout << "Path: " << module.pathname << "\n\n";
         }
     }
+
+    std::cerr << "Exiting debug main.\n";
     return 0;
 }

@@ -11,6 +11,7 @@ set(SOURCES
     core/Process/ProcessReader.cpp core/Process/ProcessReader.hpp
     core/Process/ProcessFinder.cpp core/Process/ProcessFinder.hpp
     core/Process/ModuleMapParser.cpp core/Process/ModuleMapParser.hpp
+    core/Process/ModuleFilter.cpp core/Process/ModuleFilter.hpp
     main.cpp
 )
 

@@ -4,15 +4,30 @@
 #include <expected>
 #include <cstdint>
 
+/**
+ * @brief Допускает только типы, которые можно безопасно копировать побайтово
+ * 
+ * Запрещает типы с умным управлением памятью (std::string, std::vector и тп)
+ * 
+ * @tparam T Проверяемый тип данных.
+ */
 template <typename T>
-concept TriviallyCopyable = std::is_trivially_copyable_v <T>;
+concept TriviallyCopyable = std::is_trivially_copyable_v<T>;
 
+/**
+ * @brief Возможные ошибки сканирования памяти
+ * 
+ */
 enum class MemoryError
 {
-    InvalidIdentifier,
-    ReadError
+    InvalidIdentifier, // pid не инцелезированый 
+    ReadError // произошла ошибка при чтение памяти
 };
 
+
+/**
+ * @brief Читает и записывает в память процесса по указаному адресу
+ */
 class Memory
 {
 private:
@@ -20,6 +35,14 @@ private:
 public:
 explicit Memory(pid_t pid);
 
+/**
+ * @brief Чтение памяти процесса по указаному адресу
+ * 
+ * @tparam T тип данных для чтения
+ * @param addr адрес, который надо прочитать
+ * @return std::expected<T,MemoryError> 
+ * возвращает размер буффера или ошибка ReadError при неудачном чтении
+ */
 template <TriviallyCopyable T>
 std::expected<T,MemoryError> readProcess(const uintptr_t addr) const
 {
@@ -48,6 +71,15 @@ std::expected<T,MemoryError> readProcess(const uintptr_t addr) const
     return buffer;
 }
 
+/**
+ * @brief Записывает в память процесса указаное значение по указаному адрессу
+ * 
+ * @tparam T тип данных для записи
+ * @param addr адрес куда надо записать значение
+ * @param value значение, которое будет записано
+ * @return std::expected<void, MemoryError> 
+ * При удачной записи ничего не возвращает, при ошибке записи ReadError
+ */
 template <TriviallyCopyable T>
 std::expected<void, MemoryError> writeProcess(const uintptr_t addr, const T& value) const
 {
