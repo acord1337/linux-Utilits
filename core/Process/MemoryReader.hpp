@@ -3,6 +3,7 @@
 #include <type_traits>
 #include <expected>
 #include <cstdint>
+#include <vector>
 
 /**
  * @brief Допускает только типы, которые можно безопасно копировать побайтово
@@ -99,5 +100,41 @@ std::expected<void, MemoryError> writeProcess(const uintptr_t addr, const T& val
 
     if(process_vm_writev(pid, &local_iov, 1, &remote_iov, 1, 0) != sizeof(value))
         return std::unexpected{MemoryError::ReadError};
+}
+
+/**
+ * @brief Читает указаный кусок памяти процесса
+ * 
+ * @param addr от куда начать чтение
+ * @param size сколько байтов прочитать
+ * @return std::expected<std::vector<uint8_t>,MemoryError> 
+ * При удачном чтении возвращает вектор с данными, при ошибке чтения -- ReadError
+ */
+std::expected<std::vector<uint8_t>,MemoryError> readBlock(const uintptr_t addr, size_t size) const
+{
+    if (pid <= 0 || size == 0)
+        return std::unexpected{MemoryError::InvalidIdentifier};
+
+    std::vector<uint8_t> buffer(size);
+
+    iovec local
+    {
+        .iov_base = buffer.data(),
+        .iov_len = size
+    };
+
+    iovec remote
+    {
+        .iov_base = reinterpret_cast<void*>(addr),
+        .iov_len = size
+    };
+
+    ssize_t read = process_vm_readv(pid, &local, 1, &remote, 1, 0);
+
+    if (read <= 0)
+        return std::unexpected{MemoryError::ReadError};
+
+    buffer.resize(read);
+    return buffer;
 }
 };
