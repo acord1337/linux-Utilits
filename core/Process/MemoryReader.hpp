@@ -34,7 +34,7 @@ class Memory
 private:
     pid_t pid {0};
 public:
-explicit Memory(pid_t pid);
+explicit Memory(pid_t pid) : pid(pid) {};
 
 /**
  * @brief Чтение памяти процесса по указаному адресу

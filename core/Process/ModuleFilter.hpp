@@ -39,13 +39,22 @@ struct ModuleFilterConfig
     std::string processName{};
 };
 
+class IModuleFilter
+{
+public:
+    virtual std::expected<std::vector<MemoryRegion>, FilterError>
+    filter(const std::vector<MemoryRegion>& regions, const ModuleFilterConfig& config) const = 0;
+
+    ~IModuleFilter() = default;
+};
+
 /**
  * @brief Фильтр модулей / регионов памяти процесса
  *
  * Предоставляет методы для фильтрации векторов MemoryRegion по разным условиям:
  * права доступа, системные библиотеки, анонимные регионы, драйверы и временные файлы.
  */
-class ModuleFilter
+class ModuleFilter : public IModuleFilter
 {
 public:
     /**
@@ -56,7 +65,7 @@ public:
      * Вектор отфильтрованных регионов или ошибка FilterError
      */
     std::expected<std::vector<MemoryRegion>, FilterError>
-    filter(const std::vector<MemoryRegion>& regions, const ModuleFilterConfig& config) const;
+    filter(const std::vector<MemoryRegion>& regions, const ModuleFilterConfig& config) const override;
 
 private:
     /// @brief Проверка на право записи (rw)
@@ -71,7 +80,7 @@ private:
     /// @brief Проверка, что регион не является анонимным
     bool matchAnonymous(const MemoryRegion& region, const ModuleFilterConfig& config) const noexcept;
 
-    /// @brief Проверка, что регион не относится к драйверам (/dev/*)
+    /// @brief Проверка, что регион не относится к драйверам (/dev/)
     bool matchDrivers(const MemoryRegion& region, const ModuleFilterConfig& config) const noexcept;
 
     /// @brief Проверка, что регион не является временным файлом памяти (memfd, (deleted))

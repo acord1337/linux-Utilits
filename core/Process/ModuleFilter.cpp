@@ -49,8 +49,7 @@ std::expected<std::vector<MemoryRegion>, FilterError> ModuleFilter::filter(const
  */
 bool ModuleFilter::matchWritable(const MemoryRegion& region, const ModuleFilterConfig& config) const noexcept
 {
-    if(!config.onlyWritable)
-        return true;
+    if(!config.onlyWritable) return true;
 
     return region.permissions.size() > 1 && region.permissions[1] == 'w';
 }
@@ -68,8 +67,7 @@ bool ModuleFilter::matchWritable(const MemoryRegion& region, const ModuleFilterC
  */
 bool ModuleFilter::matchExecutable(const MemoryRegion& region, const ModuleFilterConfig& config) const noexcept
 {
-    if(!config.onlyExecutable)
-        return true;
+    if(!config.onlyExecutable) return true;
 
     return region.permissions.size() > 2 && region.permissions[2] == 'x';
 }
@@ -88,10 +86,9 @@ bool ModuleFilter::matchExecutable(const MemoryRegion& region, const ModuleFilte
  */
 bool ModuleFilter::matchSystem(const MemoryRegion& region, const ModuleFilterConfig& config) const noexcept
 {
-    if(!config.excludeSystemLibs)
-        return true;
+    if(!config.excludeSystemLibs) return true;
 
-    return region.pathname.find("/usr/lib") == std::string::npos && region.pathname.find("/lib") == std::string::npos;
+    return !region.pathname.starts_with("/usr/lib") && !region.pathname.starts_with("/lib");
 }
 
 /**
@@ -113,9 +110,9 @@ bool ModuleFilter::matchAnonymous(const MemoryRegion& region, const ModuleFilter
 /**
  * @brief Проверяет является ли регион драйвером
  * 
- * Если в confige includeDrivers == false, регион всегда сщитается прошедшем фильтер
- * Если в includeDrivers == true, проверяет, срабатывает ли паттерн для фильтра в pathname региона
- * паттерн("/dev/*")
+ * Если в confige includeDrivers == true, регион всегда сщитается прошедшем фильтер
+ * Если в includeDrivers == false, проверяет, срабатывает ли паттерн для фильтра в pathname региона
+ * паттерн("/dev/")
  * 
  * @param region Проверяемый MemoryRegion
  * @param config Конфигурация фильтрации
@@ -124,17 +121,14 @@ bool ModuleFilter::matchAnonymous(const MemoryRegion& region, const ModuleFilter
  */
 bool ModuleFilter::matchDrivers(const MemoryRegion& region, const ModuleFilterConfig& config) const noexcept
 {
-    if(!config.includeDrivers)
-        return true;
-
-    return region.pathname.find("/dev/*") == std::string::npos;
+    return config.includeDrivers || !region.pathname.starts_with("/dev/");
 }
 
 /**
  * @brief Проверяет является ли регион временым файлом в памяти
  * 
- * Если в confige includeTemporaryFile == false, регион всегда сщитается прошедшем фильтер
- * Если в includeTemporaryFile == true, проверяет, срабатывает ли паттерн для фильтра в pathname региона
+ * Если в confige includeTemporaryFile == true, регион всегда сщитается прошедшем фильтер
+ * Если в includeTemporaryFile == false, проверяет, срабатывает ли паттерн для фильтра в pathname региона
  * паттерн((delete) && "memfd")
  * 
  * @param region Проверяемый MemoryRegion
@@ -144,8 +138,6 @@ bool ModuleFilter::matchDrivers(const MemoryRegion& region, const ModuleFilterCo
  */
 bool ModuleFilter::matchTemporaryFile(const MemoryRegion& region, const ModuleFilterConfig& config) const noexcept
 {
-    if(!config.includeTemporaryFile)
-        return true;
-
-    return region.pathname.find("(delete)") == std::string::npos || region.pathname.find("memfd") == std::string::npos;
+    return config.includeTemporaryFile || (!region.pathname.ends_with("(deleted)") &&
+    region.pathname.find("memfd") == std::string::npos);
 }
