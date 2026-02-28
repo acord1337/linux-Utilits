@@ -4,6 +4,9 @@
 #include "core/Process/ProcessScanner.hpp"
 #include "core/Process/ModuleMapParser.hpp"
 #include "core/Process/ModuleFilter.hpp"
+#include "core/Scanner/scanner.hpp"
+#include "core/Scanner/value.hpp"
+#include <iomanip>
 
 int main()
 {
@@ -13,12 +16,14 @@ int main()
     ProcessReader reader;
     ProcessFinder finder(reader, scanner);
     ModuleMapParser moduleParser(reader);
-    ModuleFilter filter;
+    auto filter = std::make_shared<ModuleFilter>();
 
     ModuleFilterConfig config;
+    ScanerContext scanCfg{};
 
     pid_t pid = 0;
     std::string nameProcess;
+    
 
     config.onlyWritable = true;
     config.onlyExecutable = false;
@@ -53,7 +58,7 @@ int main()
                 continue;
             }
 
-            auto filtered = filter.filter(*sModules, config);
+            auto filtered = filter->filter(*sModules, config);
             if (!filtered)
             {
                 std::cerr << "[Error] Filtering failed: " << static_cast<int>(filtered.error()) << "\n";
@@ -61,6 +66,49 @@ int main()
             }
 
             modules = *filtered;
+        }
+        else if(nameProcess == "2")
+        {
+            std::cin >> pid;
+            int val = 0;
+            std::cout << "Enter value: \n";
+            std::cin >> val;
+
+            auto mem = std::make_shared<Memory>(pid);
+            auto sModules = moduleParser.parse(pid);
+            auto value = std::make_shared<Value>(val);
+            if (!sModules)
+            {
+                std::cerr << "[Error] Failed to parse module map for PID " << pid << "\n";
+                continue;
+            }
+            auto modules = std::make_shared<std::vector<MemoryRegion>>(*sModules);
+            scanCfg.filter = filter;
+            scanCfg.memory = mem;
+            scanCfg.regions = modules;
+            scanCfg.value = value;
+
+            Scanner scan(scanCfg);
+
+            auto result = scan.searchValue();
+
+            if(!result)
+            {
+                std::cout << "Error search value \n";
+                return 0;
+            }
+
+            auto& vecResult = scan.getResult();
+
+            for(const auto& addr : vecResult)
+            {
+                std::cout << "result: " << std::hex << addr.address << " value: ";
+for (auto b : addr.value) {
+    // Печатаем каждый байт как число в HEX формате
+    std::cout << std::setw(2) << std::setfill('0') << static_cast<int>(b) << " ";
+}
+std::cout << std::dec << std::endl;
+            }
         }
         else
         {

@@ -24,7 +24,7 @@ enum class FilterError
  * onlyExecutable -- только исполняемые регионы
  * excludeSystemLibs -- исключить системные библиотеки (/lib, /usr/lib)
  * includeAnonymous -- включать анонимные регионы ([heap], [stack])
- * includeDrivers -- включать регион, пренадлежищий к драйверу (/dev/*)
+ * includeDrivers -- включать регион, пренадлежищий к драйверу (/dev/)
  * includeTemporaryFile -- включать временые файлы ((deleted))
  * processName -- имя процесса
  */

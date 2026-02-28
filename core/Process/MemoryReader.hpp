@@ -52,13 +52,13 @@ std::expected<T,MemoryError> readProcess(const uintptr_t addr) const
     if (pid <= 0)
         return std::unexpected{MemoryError::InvalidIdentifier};
 
-    iovec local
+    iovec local = 
     {
         .iov_base = &buffer,
         .iov_len = sizeof(T)
     };
 
-    iovec remote
+    iovec remote = 
     {
         .iov_base = reinterpret_cast<void*>(addr),
         .iov_len = sizeof(T)
@@ -87,12 +87,12 @@ std::expected<void, MemoryError> writeProcess(const uintptr_t addr, const T& val
     if(pid <= 0)
         return std::unexpected{MemoryError::InvalidIdentifier};
 
-    struct iovec local_iov
+    iovec local_iov = 
     {
         .iov_base = const_cast <void*> (static_cast<const void*>(&value)),
         .iov_len = sizeof(T)
     };
-    struct iovec remote_iov
+    iovec remote_iov = 
     {
         .iov_base = reinterpret_cast <void*> (addr),
         .iov_len = sizeof(T)
@@ -107,34 +107,32 @@ std::expected<void, MemoryError> writeProcess(const uintptr_t addr, const T& val
  * 
  * @param addr от куда начать чтение
  * @param size сколько байтов прочитать
+ * @param buffer Указатель куда надо записать даные
  * @return std::expected<std::vector<uint8_t>,MemoryError> 
- * При удачном чтении возвращает вектор с данными, при ошибке чтения -- ReadError
+ * При удачном чтении возвращает сколько байт было прочитано, при ошибке чтения -- ReadError
  */
-std::expected<std::vector<uint8_t>,MemoryError> readBlock(const uintptr_t addr, size_t size) const
+std::expected<size_t, MemoryError> readBlock(const uintptr_t addr, size_t size, uint8_t* buffer) const
 {
-    if (pid <= 0 || size == 0)
+    if (pid <= 0 || size == 0 || buffer == nullptr)
         return std::unexpected{MemoryError::InvalidIdentifier};
 
-    std::vector<uint8_t> buffer(size);
-
-    iovec local
+    iovec local =
     {
-        .iov_base = buffer.data(),
+        .iov_base = buffer,
         .iov_len = size
     };
 
-    iovec remote
+    iovec remote = 
     {
         .iov_base = reinterpret_cast<void*>(addr),
         .iov_len = size
     };
 
-    ssize_t read = process_vm_readv(pid, &local, 1, &remote, 1, 0);
+    ssize_t readSize = process_vm_readv(pid, &local, 1, &remote, 1, 0);
 
-    if (read <= 0)
+    if (readSize < 0)
         return std::unexpected{MemoryError::ReadError};
 
-    buffer.resize(read);
-    return buffer;
+    return readSize;
 }
 };

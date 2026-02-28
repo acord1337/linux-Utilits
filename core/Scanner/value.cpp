@@ -24,7 +24,7 @@ size_t Value::size() const noexcept
  * @return true Значения совпадают
  * @return false Значения не совпадают
  */
-bool Value::match(const uint8_t* memory, double epsilon = 1e-6) const
+bool Value::match(const uint8_t* memory, double epsilon) const
 {
     return std::visit([&](auto&& arg) -> bool 
     {

@@ -9,6 +9,11 @@ struct MemoryRegion
     std::string permissions;
     uintptr_t offset;
     std::string pathname;
+
+    size_t size() const
+    {
+        return (end > start) ? (end - start) : 0;
+    }
 };
 
 class IModuleMapParser

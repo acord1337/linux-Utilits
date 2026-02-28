@@ -12,6 +12,9 @@ set(SOURCES
     core/Process/ProcessFinder.cpp core/Process/ProcessFinder.hpp
     core/Process/ModuleMapParser.cpp core/Process/ModuleMapParser.hpp
     core/Process/ModuleFilter.cpp core/Process/ModuleFilter.hpp
+    core/Scanner/value.cpp core/Scanner/value.hpp
+    core/Scanner/scanner.cpp core/Scanner/scanner.hpp
+    core/Process/MemoryReader.cpp core/Process/MemoryReader.hpp
     main.cpp
 )
 
