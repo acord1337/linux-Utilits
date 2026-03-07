@@ -2,24 +2,36 @@
 #include <cstdint>
 #include <vector>
 #include <span>
-#include <value.hpp>
-
+#include "value.hpp"
+#include "../Process/MemoryReader.hpp"
 struct ScanResult
 {
     uintptr_t address;
-    std::vector<uint8_t> value;
+    std::vector<std::byte> value;
 };
 
 class ScanSessions
 {
 public:
-    void clear() noexcept;
-    size_t size() const noexcept;
-    const std::vector<ScanResult>& getData() const noexcept;
+    ScanSessions() noexcept = delete;
+    ~ScanSessions() = default;
 
-    void filterByAddr(std::vector<uintptr_t>& newAddr);
-    void add(uintptr_t addr, std::span<const uint8_t> value);
+    ScanSessions(const ScanSessions&) = delete;
+    ScanSessions& operator=(const ScanSessions&) = delete;
+
+    ScanSessions(ScanSessions&&) noexcept = default;
+    ScanSessions& operator=(ScanSessions&&) noexcept = default;
+
+    explicit ScanSessions(Value val, Memory mem) noexcept;
+    void clear() noexcept;
+    [[nodiscard]] size_t size() const noexcept;
+    [[nodiscard]]   const std::vector<ScanResult>& getData() const noexcept;
+
+    void filterPrevious();
+    void add(uintptr_t addr, std::span<const std::byte> value);
 
 private:
     std::vector<ScanResult> result{};
+    Value val;
+    Memory mem;
 };

@@ -25,7 +25,6 @@ enum class MemoryError
     ReadError // произошла ошибка при чтение памяти
 };
 
-
 /**
  * @brief Читает и записывает в память процесса по указаному адресу
  */
@@ -34,7 +33,7 @@ class Memory
 private:
     pid_t pid {0};
 public:
-explicit Memory(pid_t pid) : pid(pid) {};
+explicit Memory(pid_t pid) noexcept : pid(pid) {};
 
 /**
  * @brief Чтение памяти процесса по указаному адресу
@@ -45,7 +44,7 @@ explicit Memory(pid_t pid) : pid(pid) {};
  * возвращает размер буффера или ошибка ReadError при неудачном чтении
  */
 template <TriviallyCopyable T>
-std::expected<T,MemoryError> readProcess(const uintptr_t addr) const
+[[nodiscard]] std::expected<T,MemoryError> readProcess(const uintptr_t addr) const
 {
     T buffer{};
 
@@ -111,11 +110,8 @@ std::expected<void, MemoryError> writeProcess(const uintptr_t addr, const T& val
  * @return std::expected<std::vector<uint8_t>,MemoryError> 
  * При удачном чтении возвращает сколько байт было прочитано, при ошибке чтения -- ReadError
  */
-std::expected<size_t, MemoryError> readBlock(const uintptr_t addr, size_t size, uint8_t* buffer) const
+[[nodiscard]] std::expected<size_t, MemoryError> readBlock(const uintptr_t addr, size_t size, std::byte* buffer) const
 {
-    if (pid <= 0 || size == 0 || buffer == nullptr)
-        return std::unexpected{MemoryError::InvalidIdentifier};
-
     iovec local =
     {
         .iov_base = buffer,
@@ -130,9 +126,8 @@ std::expected<size_t, MemoryError> readBlock(const uintptr_t addr, size_t size, 
 
     ssize_t readSize = process_vm_readv(pid, &local, 1, &remote, 1, 0);
 
-    if (readSize < 0)
-        return std::unexpected{MemoryError::ReadError};
+    if(readSize == -1) return std::unexpected{MemoryError::ReadError};
 
-    return readSize;
+    return static_cast<size_t>(readSize);
 }
 };

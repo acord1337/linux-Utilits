@@ -2,6 +2,7 @@
 #include <variant>
 #include <cstdint>
 #include <cmath>
+#include <span>
 
 /**
  * @brief Ограничивает допустимые типы данных для сканирования 
@@ -24,6 +25,15 @@ concept ValidValueType =std::is_same_v<T, int8_t> || std::is_same_v<T, uint8_t> 
 class Value 
 {
 public:
+    enum class ValueType 
+        {
+        Int8, UInt8,
+        Int16, UInt16,
+        Int32, UInt32,
+        Int64, UInt64,
+        Float, Double
+    };
+
     /**
     * @brief набор поддеживаемых типов данных
     * 
@@ -36,6 +46,11 @@ public:
         float, double
     >;
 
+    template<ValidValueType T>
+    void setValue(T val)
+    {
+        value = val;
+    }
     template<ValidValueType T>
     explicit Value(T val) : value(val) {}
 
@@ -52,7 +67,7 @@ public:
      * @return true Значения совпадают
      * @return false Значения не совпадают
      */
-    bool match(const uint8_t* memory, double epsilon = 1e-6) const;
+    bool match(std::span<const std::byte> memory, double epsilon = 1e-6) const;
 
 private:
     ValueVariant value;

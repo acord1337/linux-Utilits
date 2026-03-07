@@ -24,14 +24,14 @@ size_t Value::size() const noexcept
  * @return true Значения совпадают
  * @return false Значения не совпадают
  */
-bool Value::match(const uint8_t* memory, double epsilon) const
+bool Value::match(std::span<const std::byte> memory, double epsilon) const
 {
     return std::visit([&](auto&& arg) -> bool 
     {
         using T = std::decay_t<decltype(arg)>;
 
         T memValue;
-        std::memcpy(&memValue, memory, sizeof(T));
+        std::memcpy(&memValue, memory.data(), sizeof(T));
 
         if constexpr(std::is_floating_point_v<T>)
             return std::abs(memValue - arg) < static_cast<T>(epsilon);

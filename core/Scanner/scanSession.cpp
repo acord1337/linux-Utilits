@@ -2,6 +2,9 @@
 #include <unordered_set>
 #include <ranges>
 #include <algorithm>
+#include <span>
+
+ScanSessions::ScanSessions(Value val, Memory mem) noexcept : val(std::move(val)), mem(std::move(mem)) {}
 
 void ScanSessions::clear() noexcept
 {
@@ -15,26 +18,34 @@ size_t ScanSessions::size() const noexcept
 
 const std::vector<ScanResult>& ScanSessions::getData() const noexcept
 {
-    if(result.empty())
-        return;
-
     return result;
 }
 
-void ScanSessions::filterByAddr(std::vector<uintptr_t>& newAddr)
-{
-    if(result.empty() || newAddr.empty())
-        return;
 
-    std::ranges::sort(newAddr);
-
-    std::erase_if(result, [&](const ScanResult& res)
-    { return !std::ranges::binary_search(newAddr, res.address); });
-}
-
-void ScanSessions::add(uintptr_t addr, std::span<const uint8_t> value)
+void ScanSessions::add(uintptr_t addr, std::span<const std::byte> value)
 {
     if(addr == 0 || value.empty()) return;
 
-    result.push_back({addr, std::vector<uint8_t>(value.begin(), value.end())});
+    result.push_back({addr, std::vector<std::byte>(value.begin(), value.end())});
+}
+
+void ScanSessions::filterPrevious()
+{
+    if(result.empty())
+        return;
+
+    std::erase_if(result, [&](ScanResult& addr)
+    {
+        std::vector<std::byte> buffer(val.size());
+
+        auto readByte = mem.readBlock(addr.address, val.size(), buffer.data());
+
+        if(!readByte) return false;
+
+        if(!val.match(std::span(buffer), 0.1))
+            return true;
+
+        addr.value = std::move(buffer);
+        return false;
+    });
 }

@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
+set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 
 project(linuxUtilits VERSION 1.0 LANGUAGES CXX)
 
@@ -15,6 +16,7 @@ set(SOURCES
     core/Scanner/value.cpp core/Scanner/value.hpp
     core/Scanner/scanner.cpp core/Scanner/scanner.hpp
     core/Process/MemoryReader.cpp core/Process/MemoryReader.hpp
+    core/Scanner/scanSession.cpp core/Scanner/scanSession.hpp
     main.cpp
 )
 

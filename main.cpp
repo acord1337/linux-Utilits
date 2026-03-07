@@ -1,144 +1,197 @@
 #include <iostream>
+#include <iomanip>
+#include <memory>
+
 #include "core/Process/ProcessFinder.hpp"
 #include "core/Process/ProcessReader.hpp"
 #include "core/Process/ProcessScanner.hpp"
 #include "core/Process/ModuleMapParser.hpp"
+#include "core/Process/MemoryReader.hpp"
 #include "core/Process/ModuleFilter.hpp"
+
 #include "core/Scanner/scanner.hpp"
 #include "core/Scanner/value.hpp"
-#include <iomanip>
+#include "core/Scanner/scanSession.hpp"
 
 int main()
 {
-    std::cerr << "Debug\n";
-
-    ProcessScanner scanner;
+    ProcessScanner procScanner;
     ProcessReader reader;
-    ProcessFinder finder(reader, scanner);
+    ProcessFinder finder(reader, procScanner);
     ModuleMapParser moduleParser(reader);
-    auto filter = std::make_shared<ModuleFilter>();
+    ModuleFilter filter;
+
+    Scanner scanner(16 * 1024 * 1024);
+
+    pid_t pid{};
+    std::string input;
 
     ModuleFilterConfig config;
-    ScanerContext scanCfg{};
-
-    pid_t pid = 0;
-    std::string nameProcess;
-    
-
     config.onlyWritable = true;
     config.onlyExecutable = false;
     config.excludeSystemLibs = true;
     config.includeAnonymous = true;
-    config.includeDrivers = false;
-    config.includeTemporaryFile = false;
 
-    std::cout << "[Info] Filter settings:\n";
-    std::cout << "  onlyWritable: " << config.onlyWritable << "\n";
-    std::cout << "  onlyExecutable: " << config.onlyExecutable << "\n";
-    std::cout << "  excludeSystemLibs: " << config.excludeSystemLibs << "\n";
-    std::cout << "  includeAnonymous: " << config.includeAnonymous << "\n";
+    std::vector<MemoryRegion> regions;
 
     while (true)
     {
-        std::cout << "\nEnter process name (or '1' to enter PID directly, 'q' to quit): ";
-        std::cin >> nameProcess;
-        if (nameProcess == "q") break;
+        std::cout << "\nEnter process name | PID | 'q': ";
+        std::cin >> input;
 
-        std::vector<MemoryRegion> modules;
+        if (input == "q")
+            break;
 
-        if (nameProcess == "1")
+        // -------------------------
+        // PROCESS BY PID
+        // -------------------------
+
+        if (std::isdigit(input[0]))
         {
-            std::cout << "Enter PID: ";
-            std::cin >> pid;
+            pid = std::stoi(input);
 
-            auto sModules = moduleParser.parse(pid);
-            if (!sModules)
+            auto parsed = moduleParser.parse(pid);
+            if (!parsed)
             {
-                std::cerr << "[Error] Failed to parse module map for PID " << pid << "\n";
+                std::cerr << "parse modules failed\n";
                 continue;
             }
 
-            auto filtered = filter->filter(*sModules, config);
+            auto filtered = filter.filter(*parsed, config);
             if (!filtered)
             {
-                std::cerr << "[Error] Filtering failed: " << static_cast<int>(filtered.error()) << "\n";
+                std::cerr << "filter modules failed\n";
                 continue;
             }
 
-            modules = *filtered;
+            regions = *filtered;
+
+            std::cout << "[regions] " << regions.size() << "\n";
         }
-        else if(nameProcess == "2")
-        {
-            std::cin >> pid;
-            int val = 0;
-            std::cout << "Enter value: \n";
-            std::cin >> val;
 
-            auto mem = std::make_shared<Memory>(pid);
-            auto sModules = moduleParser.parse(pid);
-            auto value = std::make_shared<Value>(val);
-            if (!sModules)
-            {
-                std::cerr << "[Error] Failed to parse module map for PID " << pid << "\n";
-                continue;
-            }
-            auto modules = std::make_shared<std::vector<MemoryRegion>>(*sModules);
-            scanCfg.filter = filter;
-            scanCfg.memory = mem;
-            scanCfg.regions = modules;
-            scanCfg.value = value;
+        // -------------------------
+        // PROCESS BY NAME
+        // -------------------------
 
-            Scanner scan(scanCfg);
-
-            auto result = scan.searchValue();
-
-            if(!result)
-            {
-                std::cout << "Error search value \n";
-                return 0;
-            }
-
-            auto& vecResult = scan.getResult();
-
-            for(const auto& addr : vecResult)
-            {
-                std::cout << "result: " << std::hex << addr.address << " value: ";
-for (auto b : addr.value) {
-    // Печатаем каждый байт как число в HEX формате
-    std::cout << std::setw(2) << std::setfill('0') << static_cast<int>(b) << " ";
-}
-std::cout << std::dec << std::endl;
-            }
-        }
         else
         {
-            auto infoProc = finder.searhProcessInfoByFilter(nameProcess);
-            if (!infoProc)
+            auto proc = finder.searhProcessInfoByFilter(input);
+
+            if (!proc || proc->empty())
             {
-                std::cerr << "[Error] No processes found matching: " << nameProcess << "\n";
+                std::cout << "process not found\n";
                 continue;
             }
 
-            std::cout << "[Info] Found processes:\n";
-            for (const auto& entry : *infoProc)
-            {
-                std::cout << "  Name: " << entry.name << " | PID: " << entry.pid << "\n";
-            }
+            for (auto& p : *proc)
+                std::cout << p.name << " pid=" << p.pid << "\n";
+
             continue;
         }
 
-        // Вывод отфильтрованных модулей
-        std::cout << "\n[Modules]\n";
-        for (const auto& module : modules)
+        // -------------------------
+        // FIRST SCAN
+        // -------------------------
+
+        std::cout << "Enter value: ";
+
+        int valueInput{};
+        std::cin >> valueInput;
+
+        Memory mem(pid);
+        Value value(valueInput);
+        ScanSessions session(value, mem);
+
+        session.clear();
+
+        scanner.setAlignment(Alignment::Four);
+
+        auto result = scanner.scan(
+            regions,
+            session,
+            value,
+            mem
+        );
+
+        if(!result)
         {
-            std::cout << "Start: 0x" << std::hex << module.start
-                    << " End: 0x" << module.end << std::dec << "\n";
-            std::cout << "Offset: " << module.offset
-                    << " Perms: " << module.permissions << "\n";
-            std::cout << "Path: " << module.pathname << "\n\n";
+            std::cerr << "Ошибка scanner.scan \n";
+            return 0;
+        }
+
+        std::cout << "found: " << session.size() << "\n";
+
+        for (auto& r : session.getData())
+        {
+            std::cout
+                << "addr 0x"
+                << std::hex
+                << r.address
+                << std::dec
+                << " value: ";
+
+            for (auto b : r.value)
+            {
+                std::cout
+                    << std::setw(2)
+                    << std::setfill('0')
+                    << std::hex
+                    << (int)b
+                    << " ";
+            }
+
+            std::cout << std::dec << "\n";
+        }
+
+        // -------------------------
+        // NEXT SCAN LOOP
+        // -------------------------
+
+        while (true)
+        {
+            std::cout << "\n[n] next scan | [r] restart | [q] quit : ";
+
+            std::cin >> input;
+
+            if (input == "q")
+                return 0;
+
+            if (input == "r")
+                break;
+
+            if (input == "n")
+            {
+                int newValue = 0;
+                std::cout << "ВВеди число: " << std::endl;
+                std::cin >> newValue;
+                value.setValue(newValue);
+                session.filterPrevious();
+                for (auto& r : session.getData())
+        {
+            std::cout
+                << "addr 0x"
+                << std::hex
+                << r.address
+                << std::dec
+                << " value: ";
+
+            for (auto b : r.value)
+            {
+                std::cout
+                    << std::setw(2)
+                    << std::setfill('0')
+                    << std::hex
+                    << (int)b
+                    << " ";
+            }
+
+            std::cout << std::dec << "\n";
+        }
+
+                std::cout << "remaining: " << session.size() << "\n";
+            }
         }
     }
 
-    std::cerr << "Exiting debug main.\n";
     return 0;
 }
