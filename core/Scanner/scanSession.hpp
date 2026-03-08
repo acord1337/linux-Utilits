@@ -27,11 +27,10 @@ public:
     [[nodiscard]] size_t size() const noexcept;
     [[nodiscard]]   const std::vector<ScanResult>& getData() const noexcept;
 
-    void filterPrevious();
+    void filterPrevious(const Value& val);
     void add(uintptr_t addr, std::span<const std::byte> value);
 
 private:
     std::vector<ScanResult> result{};
-    Value val;
     Memory mem;
 };

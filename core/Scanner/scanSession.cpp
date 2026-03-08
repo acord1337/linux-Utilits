@@ -4,7 +4,7 @@
 #include <algorithm>
 #include <span>
 
-ScanSessions::ScanSessions(Value val, Memory mem) noexcept : val(std::move(val)), mem(std::move(mem)) {}
+ScanSessions::ScanSessions(Value val, Memory mem) noexcept : mem(std::move(mem)) {}
 
 void ScanSessions::clear() noexcept
 {
@@ -29,7 +29,7 @@ void ScanSessions::add(uintptr_t addr, std::span<const std::byte> value)
     result.push_back({addr, std::vector<std::byte>(value.begin(), value.end())});
 }
 
-void ScanSessions::filterPrevious()
+void ScanSessions::filterPrevious(const Value& val)
 {
     if(result.empty())
         return;
@@ -40,7 +40,7 @@ void ScanSessions::filterPrevious()
 
         auto readByte = mem.readBlock(addr.address, val.size(), buffer.data());
 
-        if(!readByte) return false;
+        if(!readByte) return true;
 
         if(!val.match(std::span(buffer), 0.1))
             return true;
